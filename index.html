@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Boring Languages + LLMs — Pipeline Visualizer</title>
+<style>
+:root {
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #12121a;
+  --bg-card: #16161f;
+  --text-primary: #e8e8f0;
+  --text-secondary: #8888a0;
+  --text-muted: #555568;
+  --rust: #e87d0a;
+  --rust-glow: rgba(232,125,10,0.3);
+  --go: #00bcd4;
+  --go-glow: rgba(0,189,212,0.3);
+  --zig: #ffa000;
+  --zig-glow: rgba(255,160,0,0.3);
+  --c: #8a8a9a;
+  --c-glow: rgba(138,138,154,0.3);
+  --cpp: #6b8cff;
+  --cpp-glow: rgba(107,140,255,0.3);
+  --accent: #7c6ff7;
+  --accent-glow: rgba(124,111,247,0.3);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  overflow: hidden;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+#canvas-container {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+canvas#main {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+#controls {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  right: 20px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  z-index: 10;
+}
+#prompt-input {
+  flex: 1;
+  min-width: 200px;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid #2a2a3a;
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.3s;
+}
+#prompt-input:focus { border-color: var(--accent); }
+#prompt-input::placeholder { color: var(--text-muted); }
+.ctrl-btn {
+  padding: 10px 18px;
+  background: var(--bg-card);
+  border: 1px solid #2a2a3a;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+.ctrl-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+.ctrl-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(124,111,247,0.1); }
+#lang-select {
+  display: flex;
+  gap: 6px;
+}
+.lang-chip {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.lang-chip:hover { transform: translateY(-1px); }
+.lang-chip.active { transform: translateY(-2px); }
+#title-bar {
+  position: absolute;
+  top: 16px;
+  left: 20px;
+  z-index: 10;
+  pointer-events: none;
+}
+#title-bar h1 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.5px;
+}
+#title-bar p {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+#legend {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+#legend div { display: flex; align-items: center; gap: 6px; }
+#legend .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+</style>
+</body>
+<script>
+// ─── CONFIG ───────────────────────────────────────────────────────────
+const LANGUAGES = {
+  rust: {
+    name: 'Rust', color: '#e87d0a', glow: 'rgba(232,125,10,',
+    particles: { count: 40, size: 3, speed: 2.8, drift: 0.6 },
+    traits: ['Memory Safe', 'Zero-Cost Abstractions', 'Fearless Concurrency'],
+    pipeline: ['Cargo.toml', 'Parse', 'Type Infer', ' borrowck', 'Optimize', 'LLM I/O'],
+    particleShape: 'hex',
+    desc: 'Systems-level AI pipeline with memory-safe token streams'
+  },
+  go: {
+    name: 'Go', color: '#00bcd4', glow: 'rgba(0,189,212,',
+    particles: { count: 35, size: 2.5, speed: 3.2, drift: 0.8 },
+    traits: ['Goroutine Parallelism', 'Fast Compile', 'Simple Syntax'],
+    pipeline: ['go.mod', 'Parse', 'Gen Struct', 'JSON Marshal', 'Stream', 'LLM Call'],
+    particleShape: 'circle',
+    desc: 'Concurrent AI microservice with goroutine pipelines'
+  },
+  zig: {
+    name: 'Zig', color: '#ffa000', glow: 'rgba(255,160,0,',
+    particles: { count: 30, size: 3.5, speed: 2.4, drift: 0.4 },
+    traits: ['Compile-time Code Gen', 'No Hidden Alloc', 'C Compatible'],
+    pipeline: ['build.zig', 'AST Parse', 'Const Eval', 'Linearize', 'Buffer', 'LLM'],
+    particleShape: 'diamond',
+    desc: 'Compile-time AI codegen with zero hidden allocations'
+  },
+  c: {
+    name: 'C', color: '#8a8a9a', glow: 'rgba(138,138,154,',
+    particles: { count: 25, size: 2, speed: 1.8, drift: 0.3 },
+    traits: ['Raw Speed', 'No Runtime', 'Portable'],
+    pipeline: ['Makefile', 'Lexer', 'AST Build', 'Optimize', 'Link', 'LLM Pipe'],
+    particleShape: 'rect',
+    desc: 'Bare-metal AI inference with minimal overhead'
+  },
+  cpp: {
+    name: 'C++', color: '#6b8cff', glow: 'rgba(107,140,255,',
+    particles: { count: 32, size: 2.8, speed: 2.1, drift: 0.5 },
+    traits: ['Templates', 'STL', 'Modern Syntax', 'ABI Stable'],
+    pipeline: ['CMakeLists', 'Header', 'Impl', 'Template', 'Instantiate', 'LLM'],
+    particleShape: 'star',
+    desc: 'Template-metaprogramming AI pipeline'
+  }
+};
+
+const PIPELINE_STAGES = 6;
+let activeLang = 'rust';
+let promptText = '';
+let animTime = 0;
+let particles = [];
+let stageX = [];
+let stageY = [];
+let stageProgress = new Array(LANGUAGES.rust.pipeline.length).fill(0);
+let running = false;
+let speedMultiplier = 1;
+
+// ─── CANVAS SETUP ─────────────────────────────────────────────────────
+const canvas = document.getElementById('main');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  const container = document.getElementById('canvas-container');
+  W = container.clientWidth;
+  H = container.clientHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  computeLayout();
+}
+
+function computeLayout() {
+  const margin = 60;
+  const innerW = W - margin * 2;
+  const stageW = innerW / (LANGUAGES.rust.pipeline.length - 1);
+  stageX = [];
+  stageY = [];
+  for (let i = 0; i < LANGUAGES.rust.pipeline.length; i++) {
+    stageX.push(margin + i * stageW);
+  }
+  const topY = 80;
+  const botY = H * 0.82;
+  const midY = (topY + botY) / 2;
+  for (let i = 0; i < LANGUAGES.rust.pipeline.length; i++) {
+    stageY.push(topY + (botY - topY) * (i / (LANGUAGES.rust.pipeline.length - 1)));
+  }
+}
+
+// ─── PARTICLES ────────────────────────────────────────────────────────
+function spawnParticle(lang) {
+  const cfg = LANGUAGES[lang];
+  const p = {
+    stage: 0,
+    progress: 0,
+    x: stageX[0] + (Math.random() - 0.5) * 20,
+    y: stageY[0] + (Math.random() - 0.5) * 10,
+    size: cfg.particles.size * (0.8 + Math.random() * 0.4),
+    speed: cfg.particles.speed * (0.7 + Math.random() * 0.6),
+    drift: cfg.particles.drift * (0.5 + Math.random()),
+    hue: 0,
+    trail: [],
+    alive: true,
+    opacity: 1,
+    phase: Math.random() * Math.PI * 2
+  };
+  return p;
+}
+
+function initParticles() {
+  particles = [];
+  const cfg = LANGUAGES[activeLang];
+  for (let i = 0; i < cfg.particles.count * speedMultiplier; i++) {
+    const p = spawnParticle(activeLang);
+    p.progress = Math.random() * (cfg.pipeline.length - 1);
+    p.x = stageX[Math.min(p.stage, cfg.pipeline.length - 2)] + (Math.random() - 0.5) * 10;
+    p.y = stageY[Math.min(p.stage, cfg.pipeline.length - 2)] + (Math.random() - 0.5) * 10;
+    particles.push(p);
+  }
+}
+
+// ─── DRAWING ──────────────────────────────────────────────────────────
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return {r,g,b};
+}
+
+function drawPipeline(lang) {
+  const cfg = LANGUAGES[lang];
+  const rgb = hexToRgb(cfg.color);
+  const stages = cfg.pipeline;
+  
+  // Draw connecting beams between stages
+  for (let i = 0; i < stages.length - 1; i++) {
+    const x1 = stageX[i], y1 = stageY[i];
+    const x2 = stageX[i+1], y2 = stageY[i+1];
+    
+    // Beam
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${0.08 + stageProgress[i] * 0.15})`;
+    ctx.lineWidth = 2 + stageProgress[i] * 3;
+    ctx.stroke();
+    
+    // Glow
+    ctx.shadowColor = cfg.glow + '0.3)';
+    ctx.shadowBlur = 15;
+    ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.15)`;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+  
+  // Draw stages
+  for (let i = 0; i < stages.length; i++) {
+    const x = stageX[i], y = stageY[i];
+    const progress = stageProgress[i];
+    
+    // Stage ring
+    ctx.beginPath();
+    ctx.arc(x, y, 22 + progress * 6, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.12)`;
+    ctx.fill();
+    ctx.strokeStyle = cfg.color;
+    ctx.lineWidth = 1.5 + progress * 2;
+    ctx.stroke();
+    
+    // Inner fill based on progress
+    if (progress > 0) {
+      ctx.beginPath();
+      ctx.arc(x, y, 16, -Math.PI/2, -Math.PI/2 + Math.PI * 2 * Math.min(progress, 1));
+      ctx.strokeStyle = cfg.color;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      
+      // Inner glow
+      ctx.beginPath();
+      ctx.arc(x, y, 16, -Math.PI/2, -Math.PI/2 + Math.PI * 2 * Math.min(progress, 1), true);
+      ctx.strokeStyle = cfg.glow + '0.4)';
+      ctx.lineWidth = 6;
+      ctx.stroke();
+    }
+    
+    // Stage label
+    ctx.fillStyle = progress > 0.5 ? cfg.color : `rgba(${rgb.r},${rgb.g},${rgb.b},0.5)`;
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(stages[i], x, y + 42);
+    
+    // Status indicator
+    if (progress >= 1) {
+      ctx.beginPath();
+      ctx.arc(x, y - 28, 4, 0, Math.PI * 2);
+      ctx.fillStyle = cfg.color;
+      ctx.fill();
+    }
+  }
+  
+  // Language tag at top
+  ctx.fillStyle = cfg.color;
+  ctx.font = 'bold 14px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(`▸ ${cfg.name}`, stageX[0] - 10, stageY[0] - 30);
+  
+  // Description
+  ctx.fillStyle = 'rgba(136,136,160,0.5)';
+  ctx.font = '10px monospace';
+  ctx.fillText(cfg.desc, stageX[0] - 10, stageY[0] - 14);
+}
+
+function drawParticles(lang) {
+  const cfg = LANGUAGES[lang];
+  const rgb = hexToRgb(cfg.color);
+  
+  for (const p of particles) {
+    if (!p.alive) continue;
+    
+    const stageIdx = Math.min(Math.floor(p.progress), stages.length - 2);
+    const nextStageIdx = Math.min(stageIdx + 1, stages.length - 1);
+    const t = p.progress - stageIdx;
+    
+    const x = stageX[stageIdx] + (stageX[nextStageIdx] - stageX[stageIdx]) * t;
+    const y = stageY[stageIdx] + (stageY[nextStageIdx] - stageY[stageIdx]) * t;
+    
+    const driftX = Math.sin(p.phase + animTime * 2) * cfg.particles.drift * 8;
+    const driftY = Math.cos(p.phase * 1.3 + animTime * 1.5) * cfg.particles.drift * 4;
+    const px = x + driftX;
+    const py = y + driftY;
+    
+    // Trail
+    if (p.trail.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(p.trail[0].x, p.trail[0].y);
+      for (let i = 1; i < p.trail.length; i++) {
+        ctx.lineTo(p.trail[i].x, p.trail[i].y);
+      }
+      ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${0.15})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    
+    // Particle
+    ctx.beginPath();
+    if (cfg.particleShape === 'hex') {
+      drawHex(px, py, p.size);
+    } else if (cfg.particleShape === 'diamond') {
+      drawDiamond(px, py, p.size);
+    } else if (cfg.particleShape === 'rect') {
+      drawRectShape(px, py, p.size);
+    } else if (cfg.particleShape === 'star') {
+      drawStar(px, py, p.size);
+    } else {
+      ctx.arc(px, py, p.size, 0, Math.PI * 2);
+    }
+    ctx.closePath();
+    
+    ctx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${0.7 * p.opacity})`;
+    ctx.fill();
+    
+    // Glow
+    ctx.shadowColor = cfg.glow + '0.6)';
+    ctx.shadowBlur = 8;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    
+    // Store trail position
+    p.trail.push({x: px, y: py});
+    if (p.trail.length > 8) p.trail.shift();
+  }
+}
+
+function drawHex(x, y, r) {
+  for (let i = 0; i < 6; i++) {
+    const a = (Math.PI / 3) * i - Math.PI / 6;
+    const method = i === 0 ? 'moveTo' : 'lineTo';
+    ctx[method](x + Math.cos(a) * r, y + Math.sin(a) * r);
+  }
+}
+function drawDiamond(x, y, r) {
+  ctx.moveTo(x, y - r);
+  ctx.lineTo(x + r * 0.7, y);
+  ctx.lineTo(x, y + r);
+  ctx.lineTo(x - r * 0.7, y);
+  ctx.closePath();
+}
+function drawRectShape(x, y, r) {
+  const s = r * 0.7;
+  ctx.rect(x - s, y - s, s * 2, s * 2);
+}
+function drawStar(x, y, r) {
+  for (let i = 0; i < 5; i++) {
+    const a1 = (Math.PI * 2 / 5) * i - Math.PI / 2;
+    const a2 = a1 + Math.PI / 5;
+    ctx.lineTo(x + Math.cos(a1) * r, y + Math.sin(a1) * r);
+    ctx.lineTo(x + Math.cos(a2) * r * 0.4, y + Math.sin(a2) * r * 0.4);
+  }
+  ctx.closePath();
+}
+
+function drawBackground() {
+  // CRT scanlines
+  ctx.fillStyle = 'rgba(0,0,0,0.02)';
+  for (let y = 0; y < H; y += 3) {
+    ctx.fillRect(0, y, W, 1);
+  }
+  
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(40,40,60,0.3)';
+  ctx.lineWidth = 0.5;
+  const gridSize = 40;
+  for (let x = 0; x < W; x += gridSize) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = 0; y < H; y += gridSize) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+}
+
+function drawStatsPanel() {
+  const cfg = LANGUAGES[activeLang];
+  const x = W - 280;
+  const y = H - 140;
+  const w = 260;
+  const h = 120;
+  
+  // Panel background
+  ctx.fillStyle = 'rgba(18,18,26,0.9)';
+  ctx.strokeStyle = 'rgba(40,40,60,0.6)';
+  ctx.lineWidth = 1;
+  
+  // Rounded rect
+  const r = 10;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  
+  // Title
+  ctx.fillStyle = cfg.color;
+  ctx.font = 'bold 12px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(`▸ ${cfg.name} LLM Pipeline`, x + 12, y + 20);
+  
+  // Stats
+  ctx.fillStyle = '#8888a0';
+  ctx.font = '10px monospace';
+  ctx.fillText(`Pipeline stages: ${cfg.pipeline.length}`, x + 12, y + 42);
+  ctx.fillText(`Particles: ${particles.length}`, x + 12, y + 56);
+  ctx.fillText(`Avg progress: ${(stageProgress.reduce((a,b) => a+b, 0) / stageProgress.length * 100).toFixed(1)}%`, x + 12, y + 70);
+  
+  // Traits
+  ctx.fillStyle = 'rgba(136,136,160,0.4)';
+  ctx.font = '10px monospace';
+  ctx.fillText('Traits:', x + 12, y + 90);
+  ctx.fillStyle = `rgba(${hexToRgb(cfg.color).r},${hexToRgb(cfg.color).g},${hexToRgb(cfg.color).b},0.7)`;
+  ctx.fillText(cfg.traits.join(' • '), x + 12, y + 106);
+  
+  // Prompt display
+  if (promptText) {
+    const display = promptText.length > 60 ? promptText.slice(0, 60) + '...' : promptText;
+    ctx.fillStyle = 'rgba(200,200,220,0.3)';
+    ctx.font = '9px monospace';
+    ctx.fillText(`Prompt: ${display}`, x + 12, y + 20);
+  }
+}
+
+// ─── UPDATE ───────────────────────────────────────────────────────────
+function update(dt) {
+  const cfg = LANGUAGES[activeLang];
+  
+  // Update stage progress (smooth decay)
+  for (let i = 0; i < stageProgress.length; i++) {
+    if (stageProgress[i] > 0.01) {
+      stageProgress[i] = Math.max(0, stageProgress[i] - dt * 0.3 * speedMultiplier);
+    }
+  }
+  
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.progress += p.speed * dt * speedMultiplier * 0.15;
+    p.phase += dt * 2;
+    p.opacity -= dt * 0.15 * speedMultiplier;
+    
+    if (p.progress >= LANGUAGES[activeLang].pipeline.length - 1 || p.opacity <= 0) {
+      particles.splice(i, 1);
+    }
+  }
+  
+  // Spawn new particles periodically
+  if (particles.length < cfg.particles.count * speedMultiplier) {
+    const p = spawnParticle(activeLang);
+    particles.push(p);
+  }
+  
+  // Trigger stage progress based on particles
+  for (const p of particles) {
+    const si = Math.min(Math.floor(p.progress), LANGUAGES[activeLang].pipeline.length - 2);
+    if (si >= 0 && si < stageProgress.length) {
+      stageProgress[si] = Math.min(1, stageProgress[si] + dt * 0.5);
+    }
+  }
+}
+
+// ─── ANIMATION LOOP ──────────────────────────────────────────────────
+let lastTime = 0;
+function animate(time) {
+  const dt = Math.min((time - lastTime) / 1000, 0.1);
+  lastTime = time;
+  animTime += dt;
+  
+  update(dt);
+  
+  // Clear
+  ctx.clearRect(0, 0, W, H);
+  
+  // Background
+  drawBackground();
+  
+  // Draw active language pipeline
+  drawPipeline(activeLang);
+  drawParticles(activeLang);
+  
+  // Stats panel
+  drawStatsPanel();
+  
+  requestAnimationFrame(animate);
+}
+
+// ─── EVENTS ───────────────────────────────────────────────────────────
+document.getElementById('prompt-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.value.trim()) {
+    promptText = e.target.value.trim();
+    e.target.value = '';
+    
+    // Trigger all stages
+    for (let i = 0; i < stageProgress.length; i++) {
+      stageProgress[i] = 1;
+    }
+    
+    // Burst particles
+    const cfg = LANGUAGES[activeLang];
+    for (let i = 0; i < 15 * speedMultiplier; i++) {
+      particles.push(spawnParticle(activeLang));
+    }
+    
+    // Visual flash
+    ctx.fillStyle = LANGUAGES[activeLang].color;
+    ctx.globalAlpha = 0.1;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+});
+
+function selectLang(key) {
+  activeLang = key;
+  particles = [];
+  stageProgress = new Array(LANGUAGES.rust.pipeline.length).fill(0);
+  initParticles();
+  
+  // Update UI
+  document.querySelectorAll('.lang-chip').forEach(el => {
+    el.classList.toggle('active', el.dataset.lang === key);
+  });
+}
+
+document.querySelectorAll('.lang-chip').forEach(el => {
+  el.addEventListener('click', () => selectLang(el.dataset.lang));
+});
+
+// ─── TOUCH SUPPORT ────────────────────────────────────────────────────
+let touchStartX = 0;
+canvas.addEventListener('touchstart', (e) => {
+  touchStartX = e.touches[0].clientX;
+});
+canvas.addEventListener('touchend', (e) => {
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  if (Math.abs(dx) > 50) {
+    const keys = Object.keys(LANGUAGES);
+    const idx = keys.indexOf(activeLang);
+    const newIdx = dx > 0 ? Math.min(idx + 1, keys.length - 1) : Math.max(idx - 1, 0);
+    selectLang(keys[newIdx]);
+  }
+});
+
+// ─── INIT ─────────────────────────────────────────────────────────────
+window.addEventListener('resize', resize);
+resize();
+selectLang('rust');
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
