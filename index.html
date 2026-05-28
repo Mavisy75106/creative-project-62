@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Virtual Hallucinate Rave</title>
+<style>
+  :root {
+    --bg: #0a0a12;
+    --accent1: #ff2d7b;
+    --accent2: #7b2dff;
+    --accent3: #00e5ff;
+    --text: #e0e0f0;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+  #canvas-container {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    display: block;
+    background: var(--bg);
+  }
+  #ui-overlay {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 10;
+  }
+  #ui-overlay > * { pointer-events: auto; }
+  .controls {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    background: rgba(10,10,18,0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 14px 24px;
+    z-index: 20;
+  }
+  .controls label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: rgba(255,255,255,0.5);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .controls input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.15);
+    outline: none;
+  }
+  .controls input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent3);
+    cursor: pointer;
+    box-shadow: 0 0 10px var(--accent3);
+  }
+  .controls select {
+    background: rgba(255,255,255,0.1);
+    color: var(--text);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    outline: none;
+  }
+  .controls select option {
+    background: #1a1a2e;
+    color: var(--text);
+  }
+  #energy-bar {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 320px;
+    text-align: center;
+    z-index: 20;
+  }
+  #energy-bar .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    color: rgba(255,255,255,0.4);
+    margin-bottom: 8px;
+  }
+  #energy-meter {
+    height: 6px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+  #energy-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 3px;
+    transition: width 0.3s ease, background 0.5s ease;
+    background: linear-gradient(90deg, var(--accent1), var(--accent2), var(--accent3));
+    box-shadow: 0 0 12px var(--accent2);
+  }
+  #energy-value {
+    font-size: 28px;
+    font-weight: 700;
+    margin-top: 8px;
+    letter-spacing: -1px;
+    background: linear-gradient(135deg, var(--accent1), var(--accent3));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  #stats {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    font-size: 11px;
+    text-align: right;
+    color: rgba(255,255,255,0.35);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    z-index: 20;
+  }
+  #stats div { margin-bottom: 4px; }
+  #title {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 20;
+  }
+  #title h1 {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, var(--accent1), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  #title p {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: rgba(255,255,255,0.3);
+    margin-top: 4px;
+  }
+  .theme-btn {
+    background: none;
+    border: 1px solid rgba(255,255,255,0.15);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 12px;
+    cursor: pointer;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    transition: all 0.2s;
+  }
+  .theme-btn:hover {
+    border-color: var(--accent3);
+    color: var(--accent3);
+    box-shadow: 0 0 12px rgba(0,229,255,0.2);
+  }
+  @media (max-width: 640px) {
+    .controls { flex-wrap: wrap; justify-content: center; padding: 12px 16px; gap: 12px; bottom: 10px; }
+    .controls label { font-size: 10px; }
+    .controls input[type="range"] { width: 70px; }
+    #stats, #title { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="canvas-container">
+  <canvas id="rave"></canvas>
+</div>
+<div id="ui-overlay">
+  <div id="title">
+    <h1>Virtual Hallucinate</h1>
+    <p>Massively Multiplayer Online Rave</p>
+  </div>
+  <div id="energy-bar">
+    <div class="label">Rave Energy</div>
+    <div id="energy-meter"><div id="energy-fill"></div></div>
+    <div id="energy-value">0</div>
+  </div>
+  <div id="stats">
+    <div id="stat-dancers">Dancers: 0</div>
+    <div id="stat-bpm">BPM: 128</div>
+    <div id="stat-freq">Freq: ---</div>
+  </div>
+  <div class="controls">
+    <label>
+      <span id="bpm-label">128 BPM</span>
+      <input type="range" id="bpm-slider" min="60" max="200" value="128" step="1">
+    </label>
+    <label>
+      <span id="vibe-label">Vibe</span>
+      <select id="vibe-select">
+        <option value="0">Neon Dreams</option>
+        <option value="1">Deep House</option>
+        <option value="2">Synthwave</option>
+        <option value="3">Trance</option>
+        <option value="4">Acid</option>
+      </select>
+    </label>
+    <label>
+      <span id="strobe-label">Strobe</span>
+      <input type="range" id="strobe-slider" min="0" max="100" value="30" step="1">
+    </label>
+    <button class="theme-btn" id="add-dancer">+ Dancer</button>
+    <button class="theme-btn" id="drop">DROP</button>
+  </div>
+</div>
+<script>
+// === SEEDED PRNG ===
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// === CANVAS SETUP ===
+const canvas = document.getElementById('rave');
+const ctx = canvas.getContext('2d');
+let W, H, danceFloor;
+
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+  const fw = Math.min(W * 0.7, 600);
+  const fh = Math.min(H * 0.55, 450);
+  danceFloor = {
+    x: (W - fw) / 2,
+    y: H * 0.35,
+    w: fw,
+    h: fh
+  };
+}
+resize();
+window.addEventListener('resize', resize);
+
+// === COLOR PALETTES per vibe ===
+const vibes = [
+  { // Neon Dreams
+    name: 'Neon Dreams',
+    floor: { base: [0.12, 0.08, 0.18], grid: [0.35, 0.25, 0.55] },
+    lights: ['#ff2d7b', '#7b2dff', '#00e5ff', '#ff6b35'],
+    bg: [0.03, 0.03, 0.06],
+    particle: ['#ff2d7b', '#ff6b35', '#ffff00'],
+    bpm: 128
+  },
+  { // Deep House
+    name: 'Deep House',
+    floor: { base: [0.08, 0.06, 0.14], grid: [0.2, 0.15, 0.4] },
+    lights: ['#4a0080', '#8b00ff', '#ff4081', '#1a237e'],
+    bg: [0.02, 0.01, 0.05],
+    particle: ['#8b00ff', '#ff4081', '#ffd54f'],
+    bpm: 122
+  },
+  { // Synthwave
+    name: 'Synthwave',
+    floor: { base: [0.15, 0.05, 0.1], grid: [0.5, 0.1, 0.2] },
+    lights: ['#ff006e', '#fb5607', '#8338ec', '#3a86ff'],
+    bg: [0.04, 0.01, 0.03],
+    particle: ['#ff006e', '#fb5607', '#8338ec'],
+    bpm: 130
+  },
+  { // Trance
+    name: 'Trance',
+    floor: { base: [0.05, 0.08, 0.15], grid: [0.1, 0.3, 0.5] },
+    lights: ['#00b4d8', '#90e0ef', '#caf0f8', '#e63946'],
+    bg: [0.01, 0.02, 0.06],
+    particle: ['#00b4d8', '#90e0ef', '#48cae4'],
+    bpm: 138
+  },
+  { // Acid
+    name: 'Acid',
+    floor: { base: [0.1, 0.12, 0.02], grid: [0.3, 0.5, 0.05] },
+    lights: ['#39ff14', '#ccff00', '#00ff41', '#7fff00'],
+    bg: [0.01, 0.03, 0.01],
+    particle: ['#39ff14', '#ccff00', '#00ff41'],
+    bpm: 150
+  }
+];
+
+// === STATE ===
+let currentVibe = 0;
+let targetVibe = 0;
+let bpm = 128;
+let strobeIntensity = 30;
+let energy = 0;
+let time = 0;
+let beatPhase = 0;
+let lastBeatTime = 0;
+let beatPulse = 0;
+let dancers = [];
+let particles = [];
+let lightBeams = [];
+let audioCtx = null;
+let analyser = null;
+let oscillator = null;
+let gainNode = null;
+
+// === DANCER CLASS ===
+class Dancer {
+  constructor(seed) {
+    this.rng = mulberry32(seed);
+    this.x = danceFloor.x + this.rng() * danceFloor.w;
+    this.y = danceFloor.y + this.rng() * danceFloor.h;
+    this.size = 8 + this.rng() * 6;
+    this.angle = this.rng() * Math.PI * 2;
+    this.speed = 0.5 + this.rng() * 1.5;
+    this.wobble = this.rng() * Math.PI * 2;
+    this.wobbleSpeed = 2 + this.rng() * 3;
+    this.color = vibes[currentVibe].lights[Math.floor(this.rng() * 4)];
+    this.trail = [];
+    this.maxTrail = 20;
+    this.bobPhase = this.rng() * Math.PI * 2;
+    this.danceType = Math.floor(this.rng() * 3); // 0=jump, 1=spin, 2=sway
+    this.seed = seed;
+  }
+  update(dt, beat) {
+    const v = vibes[currentVibe];
+    const spd = this.speed * (bpm / 128) * 0.3;
+    this.bobPhase += dt * this.wobbleSpeed * (bpm / 128);
+    this.wobble += dt * 0.8;
+
+    // Move in organic patterns
+    this.angle += Math.sin(this.wobble * 0.5) * 0.02;
+    this.x += Math.cos(this.angle) * spd;
+    this.y += Math.sin(this.angle) * spd;
+
+    // Keep in dance floor bounds with bounce
+    const margin = 20;
+    if (this.x < danceFloor.x + margin) { this.x = danceFloor.x + margin; this.angle = Math.PI - this.angle; }
+    if (this.x > danceFloor.x + danceFloor.w - margin) { this.x = danceFloor.x + danceFloor.w - margin; this.angle = Math.PI - this.angle; }
+    if (this.y < danceFloor.y + margin) { this.y = danceFloor.y + margin; this.angle = -this.angle; }
+    if (this.y > danceFloor.y + danceFloor.h - margin) { this.y = danceFloor.y + danceFloor.h - margin; this.angle = -this.angle; }
+
+    // Dance animation
+    let bob = 0;
+    if (this.danceType === 0) bob = Math.abs(Math.sin(this.bobPhase)) * 12 * beat;
+    else if (this.danceType === 1) { this.angle += dt * 2 * beat; bob = Math.sin(this.bobPhase) * 6 * beat; }
+    else bob = Math.sin(this.bobPhase * 2) * 8 * beat;
+
+    // Trail
+    this.trail.unshift({ x: this.x, y: this.y - bob, alpha: 1 });
+    if (this.trail.length > this.maxTrail) this.trail.pop();
+    this.trail.forEach((t, i) => { t.alpha = 1 - i / this.maxTrail; });
+  }
+  draw(ctx, beat) {
+    const bob = Math.sin(this.bobPhase) * (3 + 10 * beat);
+    const cx = this.x;
+    const cy = this.y - bob;
+
+    // Trail
+    for (let i = this.trail.length - 1; i >= 0; i--) {
+      const t = this.trail[i];
+      const alpha = t.alpha * 0.3;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, this.size * t.alpha * 0.5, 0, Math.PI * 2);
+      ctx.fillStyle = this.color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+      ctx.fill();
+    }
+
+    // Body glow
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, this.size * 4);
+    glow.addColorStop(0, this.color + '60');
+    glow.addColorStop(1, this.color + '00');
+    ctx.beginPath();
+    ctx.arc(cx, cy, this.size * 4, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
+    ctx.fill();
+
+    // Body
+    ctx.beginPath();
+    ctx.arc(cx, cy, this.size * (1 + 0.2 * beat), 0, Math.PI * 2);
+    ctx.fillStyle = this.color;
+    ctx.fill();
+
+    // Inner bright core
+    ctx.beginPath();
+    ctx.arc(cx, cy, this.size * 0.4, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = 0.6 + 0.4 * beat;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Name tag
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '9px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('dancer' + this.seed.toString(36), cx, cy - this.size - 8);
+  }
+}
+
+// === PARTICLE CLASS ===
+class Particle {
+  constructor(x, y, color) {
+    this.x = x; this.y = y;
+    this.color = color;
+    this.vx = (Math.random() - 0.5) * 8;
+    this.vy = (Math.random() - 0.5) * 8 - 3;
+    this.life = 1;
+    this.decay = 0.01 + Math.random() * 0.02;
+    this.size = 2 + Math.random() * 4;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += 0.05;
+    this.life -= this.decay;
+  }
+  draw(ctx) {
+    ctx.globalAlpha = this.life;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+// === LIGHT BEAM ===
+class LightBeam {
+  constructor() {
+    this.reset();
+  }
+  reset() {
+    this.x = danceFloor.x + Math.random() * danceFloor.w;
+    this.y = danceFloor.y;
+    this.angle = Math.PI / 2 + (Math.random() - 0.5) * 1.2;
+    this.length = danceFloor.h * (0.8 + Math.random() * 0.4);
+    this.width = 20 + Math.random() * 40;
+    this.color = vibes[currentVibe].lights[Math.floor(Math.random() * 4)];
+    this.sweep = (Math.random() - 0.5) * 0.01 * (bpm / 128);
+  }
+  update(dt, beat) {
+    this.angle += this.sweep * (1 + beat * 2);
+    this.width = 20 + Math.sin(time * 3) * 15;
+  }
+  draw(ctx) {
+    const endX = this.x + Math.cos(this.angle) * this.length;
+    const endY = this.y + Math.sin(this.angle) * this.length;
+    const perpX = Math.cos(this.angle + Math.PI / 2);
+    const perpY = Math.sin(this.angle + Math.PI / 2);
+    const hw = this.width / 2;
+
+    ctx.globalAlpha = 0.08 + 0.05 * beat;
+    ctx.beginPath();
+    ctx.moveTo(this.x + perpX * hw, this.y + perpY * hw);
+    ctx.lineTo(endX + perpX * hw * 2, endY + perpY * hw * 2);
+    ctx.lineTo(endX - perpX * hw * 2, endY - perpY * hw * 2);
+    ctx.lineTo(this.x - perpX * hw, this.y - perpY * hw);
+    ctx.closePath();
+    ctx.fillStyle = this.color;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+// === INIT ===
+function init() {
+  // Start with some dancers
+  for (let i = 0; i < 8; i++) {
+    dancers.push(new Dancer(i * 137 + 42));
+  }
+  // Init light beams
+  for (let i = 0; i < 5; i++) {
+    lightBeams.push(new LightBeam());
+  }
+  // Init audio
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    gainNode = audioCtx.createGain();
+    gainNode.connect(analyser);
+    analyser.connect(audioCtx.destination);
+  } catch(e) {}
+}
+
+// === AUDIO SYNTH ===
+let synthOsc = null;
+let synthGain = null;
+function startSynth() {
+  if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  try {
+    synthOsc = audioCtx.createOscillator();
+    synthGain = audioCtx.createGain();
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 800;
+    synthOsc.type = 'sawtooth';
+    synthOsc.frequency.value = 55; // A1
+    synthGain.gain.value = 0.08;
+    synthOsc.connect(filter);
+    filter.connect(synthGain);
+    synthGain.connect(analyser);
+    synthGain.connect(audioCtx.destination);
+    synthOsc.start();
+  } catch(e) {}
+}
+function stopSynth() {
+  try { if (synthOsc) { synthOsc.stop(); synthOsc = null; } } catch(e) {}
+}
+
+// === FLOOR PATTERN ===
+function drawFloor(beat) {
+  const v = vibes[currentVibe];
+  const pulse = 1 + beat * 0.15;
+
+  // Base fill
+  ctx.fillStyle = `rgba(${Math.floor(v.floor.base[0]*255)},${Math.floor(v.floor.base[1]*255)},${Math.floor(v.floor.base[2]*255)},1)`;
+  ctx.fillRect(danceFloor.x, danceFloor.y, danceFloor.w, danceFloor.h);
+
+  // Grid lines
+  const gridAlpha = (0.15 + 0.1 * beat) * pulse;
+  ctx.strokeStyle = `rgba(${Math.floor(v.floor.grid[0]*255)},${Math.floor(v.floor.grid[1]*255)},${Math.floor(v.floor.grid[2]*255)},${gridAlpha})`;
+  ctx.lineWidth = 1;
+  const gridSize = 30;
+  // Perspective grid
+  for (let x = danceFloor.x; x <= danceFloor.x + danceFloor.w; x += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(x, danceFloor.y);
+    ctx.lineTo(x, danceFloor.y + danceFloor.h);
+    ctx.stroke();
+  }
+  for (let y = danceFloor.y; y <= danceFloor.y + danceFloor.h; y += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(danceFloor.x, y);
+    ctx.lineTo(danceFloor.x + danceFloor.w, y);
+    ctx.stroke();
+  }
+
+  // Perspective grid (converging toward vanishing point)
+  const vpY = danceFloor.y - 100;
+  for (let x = danceFloor.x - 50; x <= danceFloor.x + danceFloor.w + 50; x += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(x, danceFloor.y + danceFloor.h);
+    ctx.lineTo(danceFloor.x + danceFloor.w / 2 + (x - danceFloor.x - danceFloor.w / 2) * 0.1, vpY);
+    ctx.globalAlpha = 0.15;
+    ctx.strokeStyle = `rgba(255,255,255,0.08)`;
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Edge glow
+  const edgeGlow = ctx.createLinearGradient(danceFloor.x, danceFloor.y, danceFloor.x + 40, danceFloor.y);
+  edgeGlow.addColorStop(0, v.lights[0] + '40');
+  edgeGlow.addColorStop(1, 'transparent');
+  ctx.fillStyle = edgeGlow;
+  ctx.fillRect(danceFloor.x, danceFloor.y, 40, danceFloor.h);
+
+  const edgeGlow2 = ctx.createLinearGradient(danceFloor.x + danceFloor.w, danceFloor.y, danceFloor.x + danceFloor.w - 40, danceFloor.y);
+  edgeGlow2.addColorStop(0, v.lights[1] + '40');
+  edgeGlow2.addColorStop(1, 'transparent');
+  ctx.fillStyle = edgeGlow2;
+  ctx.fillRect(danceFloor.x + danceFloor.w - 40, danceFloor.y, 40, danceFloor.h);
+}
+
+// === BACKGROUND STARS ===
+const stars = [];
+for (let i = 0; i < 200; i++) {
+  stars.push({
+    x: Math.random(),
+    y: Math.random(),
+    size: Math.random() * 1.5,
+    twinkle: Math.random() * Math.PI * 2,
+    speed: 0.5 + Math.random() * 2
+  });
+}
+
+function drawStars(beat) {
+  ctx.fillStyle = '#ffffff';
+  for (const s of stars) {
+    const alpha = 0.2 + 0.15 * Math.sin(s.twinkle + time * s.speed) + beat * 0.1;
+    ctx.globalAlpha = Math.min(0.5, alpha);
+    ctx.beginPath();
+    ctx.arc(s.x * W, s.y * H * 0.3, s.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// === SYNTHWAVE SUN ===
+function drawSun(beat) {
+  const sunX = W / 2;
+  const sunY = danceFloor.y - 60;
+  const sunR = Math.min(80, W * 0.08);
+  const v = vibes[currentVibe];
+
+  // Sun glow
+  const glow = ctx.createRadialGradient(sunX, sunY, sunR * 0.3, sunX, sunY, sunR * 3);
+  glow.addColorStop(0, v.lights[0] + '30');
+  glow.addColorStop(0.5, v.lights[2] + '10');
+  glow.addColorStop(1, 'transparent');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(sunX, sunY, sunR * 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Sun body
+  const sunGrad = ctx.createLinearGradient(sunX, sunY - sunR, sunX, sunY + sunR);
+  sunGrad.addColorStop(0, v.lights[0]);
+  sunGrad.addColorStop(0.5, v.lights[2]);
+  sunGrad.addColorStop(1, v.lights[3]);
+  ctx.fillStyle = sunGrad;
+  ctx.beginPath();
+  ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Horizontal lines on sun (synthwave style)
+  ctx.fillStyle = v.bg.map(c => Math.floor(c * 255)).join(',').replace(/,/g, ', ');
+  for (let i = 0; i < 8; i++) {
+    const ly = sunY + sunR * (0.2 + i * 0.08);
+    const lw = 2 * Math.sqrt(sunR * sunR - (ly - sunY) * (ly - sunY));
+    if (lw > 0 && ly < sunY + sunR) {
+      ctx.globalAlpha = 0.3 + i * 0.08;
+      ctx.fillRect(sunX - lw / 2, ly, lw, 2 + i);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// === MOUNTAIN SILHOUETTE ===
+function drawMountains(beat) {
+  const v = vibes[currentVibe];
+  const baseY = danceFloor.y - 10;
+
+  ctx.fillStyle = `rgba(${Math.floor(v.bg[0]*255)},${Math.floor(v.bg[1]*255)},${Math.floor(v.bg[2]*255)},0.95)`;
+  ctx.beginPath();
+  ctx.moveTo(0, baseY);
+
+  const mountainPoints = [
+    { x: 0, y: baseY },
+    { x: W * 0.08, y: baseY - 40 },
+    { x: W * 0.15, y: baseY - 15 },
+    { x: W * 0.25, y: baseY - 70 + beat * 10 },
+    { x: W * 0.35, y: baseY - 30 },
+    { x: W * 0.45, y: baseY - 55 },
+    { x: W * 0.5, y: baseY - 20 },
+    { x: W * 0.55, y: baseY - 50 + beat * 8 },
+    { x: W * 0.65, y: baseY - 35 },
+    { x: W * 0.75, y: baseY - 60 },
+    { x: W * 0.85, y: baseY - 25 + beat * 5 },
+    { x: W * 0.92, y: baseY - 45 },
+    { x: W, y: baseY }
+  ];
+
+  for (const p of mountainPoints) {
+    ctx.lineTo(p.x, p.y);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+// === CROWD ENERGY RINGS ===
+function drawEnergyRings(beat) {
+  const cx = W / 2;
+  const cy = danceFloor.y + danceFloor.h / 2;
+  const v = vibes[currentVibe];
+
+  for (let i = 3; i > 0; i--) {
+    const ringR = 100 + i * 80 + Math.sin(time * 2 + i) * 20 + beat * 30;
+    ctx.globalAlpha = energy * 0.04 * (1 / i);
+    ctx.strokeStyle = v.lights[i % v.lights.length];
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+}
+
+// === SCREEN SHAKE ===
+let shakeX = 0, shakeY = 0;
+function updateShake(beat) {
+  shakeX = (Math.random() - 0.5) * beat * 4;
+  shakeY = (Math.random() - 0.5) * beat * 4;
+}
+
+// === STROBE ===
+function drawStrobe(beat) {
+  if (strobeIntensity > 10) {
+    ctx.globalAlpha = (strobeIntensity / 100) * beat * 0.3;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// === FLASHER EFFECT (on energy buildup) ===
+function drawFlasher() {
+  if (energy > 50) {
+    const flashAlpha = (energy - 50) / 200;
+    ctx.globalAlpha = flashAlpha;
+    ctx.fillStyle = vibes[currentVibe].lights[0];
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// === BEAT INDICATOR ===
+function drawBeatIndicator(beat) {
+  const cx = W - 60;
+  const cy = 60;
+  const r = 15 + beat * 20;
+  ctx.globalAlpha = 0.3 + beat * 0.5;
+  ctx.strokeStyle = vibes[currentVibe].lights[0];
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.fillStyle = vibes[currentVibe].lights[0];
+  ctx.globalAlpha = 0.1 + beat * 0.3;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+// === SPECTRAL BARS ===
+function drawSpectralBars(beat) {
+  if (!analyser) return;
+  const bufferLength = analyser.frequencyBinCount;
+  const dataArray = new Uint8Array(bufferLength);
+  analyser.getByteFrequencyData(dataArray);
+
+  const barCount = Math.min(bufferLength, 32);
+  const barWidth = W / barCount;
+  const barHeightScale = 40;
+
+  ctx.globalAlpha = 0.25;
+  for (let i = 0; i < barCount; i++) {
+    const val = dataArray[i] || (beat * 200);
+    const bh = val / 255 * barHeightScale;
+    const x = i * barWidth;
+    const v = vibes[currentVibe];
+    const colorIdx = Math.floor((i / barCount) * v.lights.length);
+    ctx.fillStyle = v.lights[colorIdx] || v.lights[0];
+    ctx.fillRect(x, H - bh - 10, barWidth - 1, bh);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// === MAIN LOOP ===
+let lastTime = performance.now();
+
+function animate(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+  time += dt;
+
+  // Beat calculation
+  const beatInterval = 60 / bpm;
+  beatPhase += dt;
+  if (beatPhase >= beatInterval) {
+    beatPhase -= beatInterval;
+    lastBeatTime = now;
+    beatPulse = 1;
+
+    // Spawn particles on beat
+    for (let i = 0; i < 5 + dancers.length; i++) {
+      const dx = danceFloor.x + Math.random() * danceFloor.w;
+      const dy = danceFloor.y + Math.random() * danceFloor.h;
+      particles.push(new Particle(dx, dy, vibes[currentVibe].lights[Math.floor(Math.random() * 4)]));
+    }
+
+    // Energy buildup
+    energy = Math.min(100, energy + 2 + dancers.length * 0.5);
+
+    // Start synth on first beat
+    if (!synthOsc && audioCtx) startSynth();
+  }
+  beatPulse *= 0.9;
+  const beat = beatPulse;
+
+  // Decay energy
+  energy = Math.max(0, energy - dt * 3);
+  const energyDisplay = Math.min(100, Math.floor(energy));
+
+  // Smooth vibe transition
+  if (currentVibe !== targetVibe) {
+    currentVibe += (targetVibe - currentVibe) * dt * 3;
+    if (Math.abs(targetVibe - currentVibe) < 0.01) currentVibe = targetVibe;
+  }
+  const v = vibes[currentVibe];
+
+  // Clear
+  ctx.fillStyle = `rgb(${Math.floor(v.bg[0]*255)},${Math.floor(v.bg[1]*255)},${Math.floor(v.bg[2]*255)})`;
+  ctx.fillRect(0, 0, W, H);
+
+  // Update shake
+  updateShake(beat);
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
+
+  // Draw layers
+  drawStars(beat);
+  drawMountains(beat);
+  drawSun(beat);
+  drawFloor(beat);
+  drawEnergyRings(beat);
+
+  // Light beams
+  for (const beam of lightBeams) {
+    beam.update(dt, beat);
+    beam.draw(ctx);
+  }
+
+  // Dancers
+  for (const d of dancers) {
+    d.update(dt, beat);
+    d.draw(ctx, beat);
+  }
+
+  // Particles
+  particles = particles.filter(p => p.life > 0);
+  for (const p of particles) {
+    p.update();
+    p.draw(ctx);
+  }
+
+  // Spectral bars
+  drawSpectralBars(beat);
+
+  ctx.restore();
+
+  // Strobe (outside shake)
+  drawStrobe(beat);
+  drawFlasher();
+  drawBeatIndicator(beat);
+
+  // Update UI
+  const fill = document.getElementById('energy-fill');
+  fill.style.width = energyDisplay + '%';
+  fill.style.background = `linear-gradient(90deg, ${v.lights[0]}, ${v.lights[2]}, ${v.lights[3]})`;
+  document.getElementById('energy-value').textContent = energyDisplay;
+  document.getElementById('stat-dancers').textContent = `Dancers: ${dancers.length}`;
+  document.getElementById('stat-bpm').textContent = `BPM: ${bpm}`;
+
+  // Update frequency display
+  if (analyser) {
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(dataArray);
+    const avg = Array.from(dataArray).reduce((a, b) => a + b, 0) / dataArray.length;
+    document.getElementById('stat-freq').textContent = `Freq: ${Math.floor(avg)}Hz`;
+  }
+
+  requestAnimationFrame(animate);
+}
+
+// === EVENT HANDLERS ===
+document.getElementById('bpm-slider').addEventListener('input', function() {
+  bpm = parseInt(this.value);
+  document.getElementById('bpm-label').textContent = bpm + ' BPM';
+  document.getElementById('stat-bpm').textContent = 'BPM: ' + bpm;
+  // Update synth pitch
+  if (synthOsc) {
+    synthOsc.frequency.value = 55 * (bpm / 60);
+  }
+});
+
+document.getElementById('vibe-select').addEventListener('change', function() {
+  targetVibe = parseInt(this.value);
+  document.getElementById('vibe-label').textContent = vibes[targetVibe].name;
+  // Update dancer colors
+  for (const d of dancers) {
+    d.color = vibes[targetVibe].lights[Math.floor(d.seed * 7) % 4];
+  }
+});
+
+document.getElementById('strobe-slider').addEventListener('input', function() {
+  strobeIntensity = parseInt(this.value);
+});
+
+document.getElementById('add-dancer').addEventListener('click', function() {
+  const seed = Math.floor(Math.random() * 99999);
+  dancers.push(new Dancer(seed));
+  // Burst of particles
+  const d = dancers[dancers.length - 1];
+  for (let i = 0; i < 20; i++) {
+    particles.push(new Particle(d.x, d.y, vibes[currentVibe].particles[Math.floor(Math.random() * 3)]));
+  }
+});
+
+document.getElementById('drop').addEventListener('click', function() {
+  // MASSIVE energy burst
+  energy = Math.min(100, energy + 50);
+  // Spawn lots of particles from center
+  const cx = W / 2;
+  const cy = danceFloor.y + danceFloor.h / 2;
+  for (let i = 0; i < 100; i++) {
+    const p = new Particle(cx, cy, vibes[currentVibe].lights[Math.floor(Math.random() * 4)]);
+    p.vx = (Math.random() - 0.5) * 20;
+    p.vy = (Math.random() - 0.5) * 20;
+    particles.push(p);
+  }
+  // Add temporary dancers
+  for (let i = 0; i < 4; i++) {
+    const d = new Dancer(Math.floor(Math.random() * 99999));
+    dancers.push(d);
+  }
+  // Update button text
+  const btn = this;
+  btn.textContent = '🔥 DROP! 🔥';
+  setTimeout(() => { btn.textContent = 'DROP'; }, 1500);
+});
+
+// === TOUCH SUPPORT ===
+canvas.addEventListener('touchmove', function(e) {
+  e.preventDefault();
+  energy = Math.min(100, energy + 5);
+  const touch = e.touches[0];
+  for (let i = 0; i < 3; i++) {
+    particles.push(new Particle(touch.clientX, touch.clientY, vibes[currentVibe].lights[Math.floor(Math.random() * 4)]));
+  }
+}, { passive: false });
+
+// === START ===
+init();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
